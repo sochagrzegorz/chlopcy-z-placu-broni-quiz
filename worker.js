@@ -55,7 +55,7 @@ async function handleLeaderboard(request, env, origin) {
   const nickname = typeof body.nickname === "string" ? body.nickname.trim().replace(/\s+/g, " ") : "";
   if (!nickname || nickname.length > 24 || /[<>\u0000-\u001f]/.test(nickname) ||
       !Number.isInteger(body.points) || !Number.isInteger(body.maxPoints) ||
-      body.maxPoints < 1 || body.maxPoints > 10 || body.points < 0 || body.points > body.maxPoints) {
+      body.maxPoints < 1 || body.maxPoints > 20 || body.points < 0 || body.points > body.maxPoints) {
     return json({ error: "Pseudonim lub wynik ma nieprawidłowy format." }, 400, origin);
   }
   const entry = { nickname, points: body.points, maxPoints: body.maxPoints, percent: Math.round(body.points / body.maxPoints * 100) };
