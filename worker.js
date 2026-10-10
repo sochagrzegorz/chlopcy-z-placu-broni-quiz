@@ -11,11 +11,57 @@ function json(data, status, origin) {
       "Content-Type": "application/json; charset=utf-8",
       "Cache-Control": "no-store",
       "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
       "Vary": "Origin"
     }
   });
+}
+
+
+async function handleLeaderboard(request, env, origin) {
+  if (!env.LEADERBOARD) return json({ error: "Ranking nie jest jeszcze skonfigurowany." }, 503, origin);
+  if (request.method === "GET") {
+    try {
+      const entries = await env.LEADERBOARD.get("top10", "json");
+      return json({ entries: Array.isArray(entries) ? entries : [] }, 200, origin);
+    } catch {
+      return json({ error: "Nie udało się pobrać rankingu." }, 503, origin);
+    }
+  }
+  if (request.method !== "POST") return json({ error: "Dozwolone są metody GET i POST." }, 405, origin);
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  if (hitLimit(ip)) return json({ error: "Zbyt wiele prób. Spróbuj ponownie za minutę." }, 429, origin);
+  let body;
+  try { body = await request.json(); }
+  catch { return json({ error: "Nieprawidłowy format danych." }, 400, origin); }
+  const nickname = typeof body.nickname === "string" ? body.nickname.trim().replace(/\\s+/g, " ") : "";
+  const points = body.points;
+  const maxPoints = body.maxPoints;
+  if (!/^[\\p{L}\\p{N} _.-]{1,24}$/u.test(nickname) ||
+      !Number.isInteger(points) || !Number.isInteger(maxPoints) ||
+      ![6, 10].includes(maxPoints) || points < 0 || points > maxPoints) {
+    return json({ error: "Podaj pseudonim i prawidłowy wynik." }, 400, origin);
+  }
+  const entry = { nickname: nickname, points: points, maxPoints: maxPoints,
+    percent: Math.round(points * 100 / maxPoints), submittedAt: Date.now() };
+  try {
+    const saved = await env.LEADERBOARD.get("top10", "json");
+    const entries = Array.isArray(saved) ? saved : [];
+    const key = nickname.toLocaleLowerCase("pl");
+    const previous = entries.find(item => item.nickname.toLocaleLowerCase("pl") === key);
+    if (previous && previous.percent >= entry.percent) {
+      return json({ saved: false, entries: entries }, 200, origin);
+    }
+    const next = entries.filter(item => item.nickname.toLocaleLowerCase("pl") !== key);
+    next.push(entry);
+    next.sort((a, b) => b.percent - a.percent || b.points - a.points || a.submittedAt - b.submittedAt);
+    const top = next.slice(0, 10);
+    await env.LEADERBOARD.put("top10", JSON.stringify(top));
+    return json({ saved: true, entries: top }, 200, origin);
+  } catch {
+    return json({ error: "Nie udało się zapisać wyniku." }, 503, origin);
+  }
 }
 
 function getOutputText(data) {
@@ -51,13 +97,14 @@ export default {
       status: 204,
       headers: {
         "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Max-Age": "86400",
         "Vary": "Origin"
       }
     });
     const url = new URL(request.url);
+    if (url.pathname === "/leaderboard") return handleLeaderboard(request, env, ALLOWED_ORIGIN);
     if (url.pathname !== "/grade") return json({ error: "Nie znaleziono endpointu." }, 404, ALLOWED_ORIGIN);
     if (request.method !== "POST") return json({ error: "Dozwolona jest metoda POST." }, 405, ALLOWED_ORIGIN);
     if (!env.OPENAI_API_KEY) return json({ error: "Brak konfiguracji klucza API po stronie serwera." }, 503, ALLOWED_ORIGIN);
