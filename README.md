@@ -25,7 +25,7 @@ Aby odtworzyć konfigurację:
 3. Utwórz namespace Workers KV `chlopcy-quiz-ranking` i podłącz go do Workera jako binding `LEADERBOARD` (dla środowiska Production; Previews mogą używać tej samej przestrzeni).
 4. Ustaw w `index.html` `AI_API_URL` na adres Workera zakończony `/grade`; endpoint `/leaderboard` jest tworzony automatycznie przez Worker.
 
-Ranking przechowuje maksymalnie 10 najwyższych wyników. Uczeń sam klika „Dodaj mój wynik do rankingu”; publicznie widoczne są wyłącznie pseudonim i procent wyniku. Odpowiedzi opisowe nie są zapisywane w rankingu. Najlepszy wynik danego pseudonimu zastępuje jego słabszy wynik.
+Worker przechowuje do 100 najlepszych pseudonimów, a strona wyświetla TOP 10. Quiz biologiczny automatycznie wysyła wynik (maks. 13 pkt) oraz pseudonim po ukończeniu; quiz z lektury zachowuje przycisk ręcznego dodania wyniku. Publicznie widoczne są wyłącznie pseudonim i wynik. Odpowiedzi opisowe nie są zapisywane w rankingu. Lepszy wynik danego pseudonimu zastępuje słabszy.
 
 Klucz OpenAI jest osobnym sekretem API. Skorzystaj z [oficjalnego przewodnika OpenAI API](https://developers.openai.com/api/docs/quickstart), by go utworzyć. Nie udostępniaj klucza uczniom. API przesyła do modelu wyłącznie dwie krótkie odpowiedzi i treść pytań — pseudonim nie jest wysyłany. Ocena AI (0–4 pkt) jest propozycją do sprawdzenia przez nauczyciela.
 
