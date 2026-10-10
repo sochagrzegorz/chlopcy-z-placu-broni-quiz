@@ -48,7 +48,7 @@ async function handleLeaderboard(request, env, origin) {
   if (request.method !== "GET" && request.method !== "POST") return json({ error: "Dozwolone są metody GET i POST." }, 405, origin);
   let entries = await env.LEADERBOARD.get("leaderboard", "json") || [];
   if (!Array.isArray(entries)) entries = [];
-  if (request.method === "GET") return json({ entries: entries.map(item => ({ ...item, quiz: item.quiz === "biologia" ? "biologia" : "lektura" })).slice(0, 10) }, 200, origin);
+  if (request.method === "GET") { const requestedQuiz = new URL(request.url).searchParams.get("quiz"); const normalizedQuiz = requestedQuiz === "biologia" ? "biologia" : requestedQuiz === "lektura" ? "lektura" : null; const ranked = entries.map(item => ({ ...item, quiz: item.quiz === "biologia" ? "biologia" : "lektura" })).filter(item => !normalizedQuiz || item.quiz === normalizedQuiz); return json({ entries: ranked.slice(0, 10) }, 200, origin); }
   let body;
   try { body = await request.json(); }
   catch { return json({ error: "Nieprawidłowy format danych." }, 400, origin); }
