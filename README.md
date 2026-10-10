@@ -12,15 +12,18 @@ Repozytorium: https://github.com/sochagrzegorz/chlopcy-z-placu-broni-quiz
 
 Po zmianach w index.html GitHub Pages automatycznie przebuduje stronę.
 
-## Ocena AI w sekcji IV — konfiguracja wymagana
+## Backend AI i ranking
 
-Plik worker.js zawiera backend API oparty o OpenAI Responses API. GitHub Pages obsługuje statyczne pliki i nie może bezpiecznie przechowywać sekretu API. Dlatego ocena AI pozostaje wyłączona do czasu wdrożenia backendu i ustawienia jego adresu w index.html.
+Quiz korzysta z Cloudflare Worker `chlopcy-quiz-ai` oraz OpenAI Responses API. Ocena AI w sekcji IV jest włączona. GitHub Pages obsługuje statyczne pliki, dlatego sekret `OPENAI_API_KEY` pozostaje po stronie Cloudflare.
 
-1. Utwórz konto Cloudflare, otwórz Workers & Pages i utwórz nowego Workera.
-2. Wklej zawartość worker.js do edytora Workera i opublikuj go.
-3. W ustawieniach Workera otwórz Settings → Variables and Secrets, dodaj sekret o nazwie OPENAI_API_KEY i wprowadź tam klucz OpenAI. Nie wklejaj klucza do index.html, repozytorium ani czatu.
-4. Skopiuj adres Workera, zakończony ścieżką /grade, np. https://nazwa-workera.twoje-konto.workers.dev/grade.
-5. W index.html ustaw AI_API_URL na ten adres i zapisz zmianę na GitHubie. Przycisk Oceń odpowiedzi AI w sekcji IV będzie wtedy aktywny.
+Aby odtworzyć konfigurację:
+
+1. Utwórz Workera w Cloudflare Workers & Pages i wklej kod z `worker.js`.
+2. W ustawieniach dodaj sekret `OPENAI_API_KEY`.
+3. Utwórz namespace Workers KV `chlopcy-quiz-ranking` i podłącz go do Workera jako binding `LEADERBOARD` (dla środowiska Production; Previews mogą używać tej samej przestrzeni).
+4. Ustaw w `index.html` `AI_API_URL` na adres Workera zakończony `/grade`; endpoint `/leaderboard` jest tworzony automatycznie przez Worker.
+
+Ranking przechowuje maksymalnie 10 najwyższych wyników. Uczeń sam klika „Dodaj mój wynik do rankingu”; publicznie widoczne są wyłącznie pseudonim i procent wyniku. Odpowiedzi opisowe nie są zapisywane w rankingu. Najlepszy wynik danego pseudonimu zastępuje jego słabszy wynik.
 
 Klucz OpenAI jest osobnym sekretem API. Skorzystaj z [oficjalnego przewodnika OpenAI API](https://developers.openai.com/api/docs/quickstart), by go utworzyć. Nie udostępniaj klucza uczniom. API przesyła do modelu wyłącznie dwie krótkie odpowiedzi i treść pytań — pseudonim nie jest wysyłany. Ocena AI (0–4 pkt) jest propozycją do sprawdzenia przez nauczyciela.
 
@@ -35,7 +38,8 @@ Worker ogranicza liczbę żądań na adres IP w obrębie aktywnego procesu. To p
 - odpowiedź z sekcji V nadal ocenia nauczyciel;
 - pseudonim zamiast imienia, nazwiska i klasy;
 - przycisk rozpoczęcia nowej sesji;
-- układ dostosowany do telefonu;
+- układ dostosowany do telefonu, inspirowany Placem Broni i węgierską flagą;
+- opcjonalny, publiczny ranking TOP 10 z pseudonimami i wynikami;
 - drukowanie lub zapis do PDF z przeglądarki.
 
 Treść banku pytań przygotowano na podstawie lektury; pytania i odpowiedzi warto zweryfikować pod kątem wydania omawianego w klasie.
