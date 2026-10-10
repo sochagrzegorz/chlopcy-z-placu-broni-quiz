@@ -12,6 +12,8 @@ Repozytorium: https://github.com/sochagrzegorz/chlopcy-z-placu-broni-quiz
 
 Po zmianach w index.html GitHub Pages automatycznie przebuduje stronę.
 
+Quiz biologiczny korzysta z endpointu `/grade` tego samego Workera. Po zmianach w `worker.js` opublikuj nową wersję Workera w Cloudflare; sam commit na GitHubie nie wdraża backendu.
+
 ## Backend AI i ranking
 
 Quiz korzysta z Cloudflare Worker `chlopcy-quiz-ai` oraz OpenAI Responses API. Ocena AI w sekcji IV jest włączona. GitHub Pages obsługuje statyczne pliki, dlatego sekret `OPENAI_API_KEY` pozostaje po stronie Cloudflare.
