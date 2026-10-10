@@ -1,5 +1,5 @@
 const ALLOWED_ORIGIN = "https://sochagrzegorz.github.io";
-const MODEL = "gpt-6-astra";
+const MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast";
 const RATE_LIMIT = 15;
 const WINDOW_MS = 60_000;
 const buckets = new Map();
@@ -16,52 +16,6 @@ function json(data, status, origin) {
       "Vary": "Origin"
     }
   });
-}
-
-
-async function handleLeaderboard(request, env, origin) {
-  if (!env.LEADERBOARD) return json({ error: "Ranking nie jest jeszcze skonfigurowany." }, 503, origin);
-  if (request.method === "GET") {
-    try {
-      const entries = await env.LEADERBOARD.get("top10", "json");
-      return json({ entries: Array.isArray(entries) ? entries : [] }, 200, origin);
-    } catch {
-      return json({ error: "Nie udało się pobrać rankingu." }, 503, origin);
-    }
-  }
-  if (request.method !== "POST") return json({ error: "Dozwolone są metody GET i POST." }, 405, origin);
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  if (hitLimit(ip)) return json({ error: "Zbyt wiele prób. Spróbuj ponownie za minutę." }, 429, origin);
-  let body;
-  try { body = await request.json(); }
-  catch { return json({ error: "Nieprawidłowy format danych." }, 400, origin); }
-  const nickname = typeof body.nickname === "string" ? body.nickname.trim().replace(/\\s+/g, " ") : "";
-  const points = body.points;
-  const maxPoints = body.maxPoints;
-  if (!/^[\\p{L}\\p{N} _.-]{1,24}$/u.test(nickname) ||
-      !Number.isInteger(points) || !Number.isInteger(maxPoints) ||
-      ![6, 10].includes(maxPoints) || points < 0 || points > maxPoints) {
-    return json({ error: "Podaj pseudonim i prawidłowy wynik." }, 400, origin);
-  }
-  const entry = { nickname: nickname, points: points, maxPoints: maxPoints,
-    percent: Math.round(points * 100 / maxPoints), submittedAt: Date.now() };
-  try {
-    const saved = await env.LEADERBOARD.get("top10", "json");
-    const entries = Array.isArray(saved) ? saved : [];
-    const key = nickname.toLocaleLowerCase("pl");
-    const previous = entries.find(item => item.nickname.toLocaleLowerCase("pl") === key);
-    if (previous && previous.percent >= entry.percent) {
-      return json({ saved: false, entries: entries }, 200, origin);
-    }
-    const next = entries.filter(item => item.nickname.toLocaleLowerCase("pl") !== key);
-    next.push(entry);
-    next.sort((a, b) => b.percent - a.percent || b.points - a.points || a.submittedAt - b.submittedAt);
-    const top = next.slice(0, 10);
-    await env.LEADERBOARD.put("top10", JSON.stringify(top));
-    return json({ saved: true, entries: top }, 200, origin);
-  } catch {
-    return json({ error: "Nie udało się zapisać wyniku." }, 503, origin);
-  }
 }
 
 function getOutputText(data) {
@@ -89,6 +43,36 @@ function hitLimit(ip) {
   return entry.count > RATE_LIMIT;
 }
 
+async function handleLeaderboard(request, env, origin) {
+  if (!env.LEADERBOARD) return json({ error: "Ranking nie jest skonfigurowany." }, 503, origin);
+  if (request.method !== "GET" && request.method !== "POST") return json({ error: "Dozwolone są metody GET i POST." }, 405, origin);
+  let entries = await env.LEADERBOARD.get("leaderboard", "json") || [];
+  if (!Array.isArray(entries)) entries = [];
+  if (request.method === "GET") return json({ entries: entries.slice(0, 10) }, 200, origin);
+  let body;
+  try { body = await request.json(); }
+  catch { return json({ error: "Nieprawidłowy format danych." }, 400, origin); }
+  const nickname = typeof body.nickname === "string" ? body.nickname.trim().replace(/\s+/g, " ") : "";
+  if (!nickname || nickname.length > 24 || /[<>\u0000-\u001f]/.test(nickname) ||
+      !Number.isInteger(body.points) || !Number.isInteger(body.maxPoints) ||
+      body.maxPoints < 1 || body.maxPoints > 10 || body.points < 0 || body.points > body.maxPoints) {
+    return json({ error: "Pseudonim lub wynik ma nieprawidłowy format." }, 400, origin);
+  }
+  const entry = { nickname, points: body.points, maxPoints: body.maxPoints, percent: Math.round(body.points / body.maxPoints * 100) };
+  const key = nickname.toLocaleLowerCase("pl");
+  const existingIndex = entries.findIndex(item => String(item.nickname || "").toLocaleLowerCase("pl") === key);
+  if (existingIndex >= 0) {
+    const old = entries[existingIndex];
+    if (entry.percent < old.percent || (entry.percent === old.percent && entry.points <= old.points)) return json({ saved: false }, 200, origin);
+    entries.splice(existingIndex, 1);
+  }
+  entries.push(entry);
+  entries.sort((a, b) => b.percent - a.percent || b.points - a.points || a.nickname.localeCompare(b.nickname, "pl"));
+  entries = entries.slice(0, 100);
+  await env.LEADERBOARD.put("leaderboard", JSON.stringify(entries));
+  return json({ saved: true }, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -107,7 +91,7 @@ export default {
     if (url.pathname === "/leaderboard") return handleLeaderboard(request, env, ALLOWED_ORIGIN);
     if (url.pathname !== "/grade") return json({ error: "Nie znaleziono endpointu." }, 404, ALLOWED_ORIGIN);
     if (request.method !== "POST") return json({ error: "Dozwolona jest metoda POST." }, 405, ALLOWED_ORIGIN);
-    if (!env.OPENAI_API_KEY) return json({ error: "Brak konfiguracji klucza API po stronie serwera." }, 503, ALLOWED_ORIGIN);
+    if (!env.AI) return json({ error: "Brak konfiguracji Workers AI w Cloudflare." }, 503, ALLOWED_ORIGIN);
     const ip = request.headers.get("CF-Connecting-IP") || "unknown";
     if (hitLimit(ip)) return json({ error: "Zbyt wiele prób. Spróbuj ponownie za minutę." }, 429, ALLOWED_ORIGIN);
 
@@ -162,44 +146,22 @@ export default {
       "Zwróć wynik zgodny ze schematem JSON. Suma ma być sumą punktów odpowiedzi, a max_points ma wynosić 4."
     ].join(" ");
 
-    let apiResponse;
-    try {
-      apiResponse = await fetch("https://api.openai.com/v1/responses", {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer " + env.OPENAI_API_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          store: false,
-          instructions: instructions,
-          input: JSON.stringify({ answers: body.answers }),
-          max_output_tokens: 700,
-          text: {
-            format: {
-              type: "json_schema",
-              name: "quiz_short_answer_grading",
-              strict: true,
-              schema: schema
-            }
-          }
-        })
-      });
-    } catch {
-      return json({ error: "Nie udało się połączyć z usługą oceny." }, 502, ALLOWED_ORIGIN);
-    }
-    if (!apiResponse.ok) {
-      return json({ error: "Usługa AI nie przyjęła prośby o ocenę." }, 502, ALLOWED_ORIGIN);
-    }
-
-    let responseData;
-    try { responseData = await apiResponse.json(); }
-    catch { return json({ error: "Usługa AI zwróciła nieprawidłową odpowiedź." }, 502, ALLOWED_ORIGIN); }
     let grade;
-    try { grade = JSON.parse(getOutputText(responseData)); }
-    catch { return json({ error: "Nie udało się odczytać oceny AI." }, 502, ALLOWED_ORIGIN); }
-
+    try {
+      const modelResponse = await env.AI.run(MODEL, {
+        messages: [
+          { role: "system", content: instructions },
+          { role: "user", content: JSON.stringify({ answers: body.answers }) }
+        ],
+        response_format: { type: "json_schema", json_schema: schema },
+        max_tokens: 700,
+        temperature: 0.1
+      });
+      const result = modelResponse && modelResponse.response;
+      grade = typeof result === "string" ? JSON.parse(result) : result;
+    } catch {
+      return json({ error: "Nie udało się uzyskać oceny AI. Spróbuj ponownie później." }, 503, ALLOWED_ORIGIN);
+    }
     if (!Array.isArray(grade.results) || grade.results.length !== 2 ||
         grade.max_points !== 4 || !Number.isInteger(grade.total) ||
         grade.results.some(item => !ids.has(item.id) || !Number.isInteger(item.score) ||
@@ -210,4 +172,3 @@ export default {
     return json(grade, 200, ALLOWED_ORIGIN);
   }
 };
-
